@@ -4,12 +4,14 @@
 
 ## 사용법
 
-`dashboard.html`을 브라우저로 열면 등록된 업체 목록이 검색창과 함께 표시됩니다. 업체를 선택하면 카테고리별 데이터, 출처/신뢰도, 종합 신호등, 방문 시 확인 체크리스트가 표시됩니다.
+`index.html`을 브라우저로 열면 등록된 업체 목록이 검색창과 함께 표시됩니다. 업체를 선택하면 카테고리별 데이터, 출처/신뢰도, 종합 신호등, 방문 시 확인 체크리스트가 표시됩니다.
 
 ```
 python3 -m http.server 8000   # 저장소 루트에서 실행
-# http://localhost:8000/dashboard.html
+# http://localhost:8000/
 ```
+
+GitHub Pages로도 그대로 서빙됩니다 (`https://<user>.github.io/<repo>/`).
 
 ## 구조 (데이터 / 템플릿 분리)
 
@@ -23,7 +25,7 @@ data/
 assets/
   dashboard.js          # 카테고리 스키마 + 회사 데이터만으로 화면을 그리는 공용 렌더링 엔진
   dashboard.css
-dashboard.html          # 단일 진입점 (목록 ↔ 상세, ?biz=<id> 로 라우팅)
+index.html              # 단일 진입점 (목록 ↔ 상세, ?biz=<id> 로 라우팅)
 ```
 
 ## 신규 업체 추가 방법
