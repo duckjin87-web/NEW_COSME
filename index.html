@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>사전조사 대시보드 — 신규 화장품 제조업체</title>
+<link rel="stylesheet" href="assets/dashboard.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<!-- 근거자료 모달 -->
+<div class="modal-bg" id="modal" onclick="if(event.target===this)closeEv()">
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="modal-title">출처</h3>
+      <button class="modal-close" onclick="closeEv()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="data/categories.js"></script>
+<script src="data/registry.js"></script>
+<script src="data/companies/manifest.js"></script>
+<script src="assets/dashboard.js"></script>
+<script>loadCompanies().then(init);</script>
+</body>
+</html>
