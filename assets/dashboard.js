@@ -36,8 +36,7 @@ function renderList() {
     </div>
     <div class="search-box">
       <input id="search-input" type="text" placeholder="업체명으로 검색 (예: 이손)" autocomplete="off">
-      <button class="api-search-btn" onclick="searchByApi()">식약처 API 조회</button>
-      <button class="key-btn" onclick="setupApiKey()">${getMfdsKey() ? '🔑 키설정됨' : '🔑 키미설정'}</button>
+      <button class="api-search-btn" onclick="searchByApi()">식약처 조회</button>
     </div>
     <div class="company-list" id="company-list"></div>
   `;
@@ -85,7 +84,7 @@ function renderDetail(company) {
                 ${m.evidenceKey ? `<button class="src-btn" onclick="showEv('${m.evidenceKey}')">출처</button>` : ''}
               </span>`).join('')}
             <span>사업자등록번호 <b>${company.bizNo ? escapeHtml(company.bizNo) : '미확인'}</b>
-              <button id="mfds-lookup-btn" class="src-btn mfds-btn" onclick="triggerMfdsLookup()">식약처 API 조회</button>
+              <button id="mfds-lookup-btn" class="src-btn mfds-btn" onclick="triggerMfdsLookup()">식약처 조회</button>
             </span>
           </div>
         </div>
@@ -256,146 +255,129 @@ function openModal(title, items) {
 function closeEv() { document.getElementById('modal').classList.remove('on'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEv(); });
 
-// ── 식약처 화장품 제조업체 정보 API (data.go.kr) ──────────────────────────────
-const MFDS_API = 'https://apis.data.go.kr/1471000/CsmtcsMfcrtrInfoService01/getCsmtcsMfcrtrInfoList01';
+// ── 식약처 제조업체 정적 인덱스 검색 ──────────────────────────────
+// 이 API는 업체명 서버사이드 필터를 지원하지 않고 32,316건 전체를 반환합니다.
+// tools/build-mfds-index.js 로 전체 데이터를 미리 내려받아 data/mfds-index.json 에 저장하고,
+// 브라우저는 이 정적 파일을 로드해 클라이언트 사이드 즉시 검색합니다.
 
-function getMfdsKey() { return localStorage.getItem('mfds_key') || ''; }
-function setMfdsKey(k) { k ? localStorage.setItem('mfds_key', k) : localStorage.removeItem('mfds_key'); }
+let _mfdsIndex = null;   // [{n, b, r, a, d, t}] — 로드 후 캐시
+let _mfdsLoading = null; // 중복 fetch 방지
 
-function setupApiKey() {
-  const cur = getMfdsKey();
-  const k = prompt(
-    'data.go.kr에서 발급받은 "일반 인증키(Encoding)" 를 붙여넣으세요.\n' +
-    '(Decoding 키가 아닌 %xx 형태의 Encoding 키여야 합니다)',
-    cur || ''
-  );
-  if (k === null) return;
-  setMfdsKey(k.trim());
-  renderList();
+async function loadMfdsIndex() {
+  if (_mfdsIndex) return _mfdsIndex;
+  if (_mfdsLoading) return _mfdsLoading;
+  _mfdsLoading = fetch('data/mfds-index.json')
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(data => { _mfdsIndex = data; return data; });
+  return _mfdsLoading;
 }
 
-async function lookupMfds(name) {
-  const key = getMfdsKey();
-  if (!key) return { error: 'no_key' };
-  try {
-    const url = `${MFDS_API}?serviceKey=${key}&numOfRows=100&pageNo=1&type=json&entpName=${encodeURIComponent(name)}`;
-    const res = await fetch(url);
-    if (!res.ok) return { error: `HTTP ${res.status}` };
-    const json = await res.json();
-    const body = json?.body || json?.response?.body;
-    if (!body) return { error: 'parse_fail', raw: JSON.stringify(json).slice(0, 400) };
-    const items = body.items;
-    if (!items) return { items: [], total: 0 };
-    return { items: Array.isArray(items) ? items : [items], total: body.totalCount };
-  } catch (e) {
-    return { error: e.message };
-  }
+function normName(s) {
+  return (s || '').replace(/[\s\(\)（）주식회사유한회사합자합명]/g, '').toLowerCase();
 }
 
-function rankMfdsItems(items, name) {
-  const q = name.replace(/[()（）\s주식회사(유)]/g, '').toLowerCase();
-  const exact = [], partial = [], similar = [];
-  for (const it of items) {
-    const n = (it.ENTP_NAME || '').replace(/[()（）\s주식회사(유)]/g, '').toLowerCase();
-    if (n === q) exact.push(it);
+function searchMfdsIndex(index, name) {
+  const q = normName(name);
+  const exact = [], partial = [], other = [];
+  for (const it of index) {
+    const n = normName(it.n);
+    if (n === q)                      exact.push(it);
     else if (n.includes(q) || q.includes(n)) partial.push(it);
-    else similar.push(it);
+    else                              other.push(it);
   }
-  return { exact, partial, similar };
+  return { exact, partial, other };
 }
 
 function mfdsItemToEv(it, conf) {
-  const nameVal = it.ENTP_NAME || '';
-  const bizVal  = it.BIZRNO   || '';
-  const bossVal = it.BOSS_NAME || '';
-  const addrVal = it.FACTORY_ADDR || '';
-  const dateVal = it.ENTP_PERMIT_DATE || '';
   return {
-    src: '식품의약품안전처 공공데이터',
+    src: '식품의약품안전처 공공데이터 (mfds-index.json)',
     color: conf === 'high' ? '#22b8cf' : conf === 'mid' ? '#eab308' : '#6b7689',
     conf,
-    val: `${nameVal}${bossVal ? ' / 대표: ' + bossVal : ''}${bizVal ? ' / 사업자번호: ' + bizVal : ''}`,
-    raw: [addrVal && `주소: ${addrVal}`, dateVal && `허가일: ${dateVal}`].filter(Boolean).join('\n'),
+    val: `${it.n}${it.r ? ' / 대표: ' + it.r : ''}${it.b ? ' / 사업자번호: ' + it.b : ''}`,
+    raw: [it.a && `주소: ${it.a}`, it.d && `허가일: ${it.d}`, it.t && `업종: ${it.t}`]
+      .filter(Boolean).join('\n'),
     link: '',
   };
 }
 
-function showMfdsResult(name, result) {
-  if (result.error === 'no_key') { alert('API 키를 먼저 설정해주세요.'); return; }
-  if (result.error) {
-    openModal('API 조회 오류', [{
-      src: '식약처 API', color: '#ef4444', conf: 'low',
-      val: `오류: ${result.error}`,
-      raw: result.error.toLowerCase().includes('fetch') || result.error.toLowerCase().includes('cors')
-        ? 'CORS 차단으로 보입니다. 브라우저에서 직접 API 호출이 불가능합니다. ' +
-          'python3 스크립트로 서버사이드 호출하거나 CORS 프록시가 필요합니다.'
-        : result.raw || '',
+function showMfdsResult(name, { exact, partial, other, error, notBuilt }) {
+  if (notBuilt) {
+    openModal('식약처 인덱스 미생성', [{
+      src: '안내', color: '#eab308', conf: 'low',
+      val: 'data/mfds-index.json 파일이 없습니다',
+      raw: '터미널에서 아래 명령을 실행한 뒤 커밋·푸시해 주세요:\n\n' +
+           'node tools/build-mfds-index.js "YOUR_ENCODING_KEY"\n' +
+           'git add data/mfds-index.json\n' +
+           'git commit -m "식약처 제조업체 인덱스 생성"\n' +
+           'git push',
       link: '',
     }]);
     return;
   }
-  if (!result.items || !result.items.length) {
-    openModal(`식약처 API — "${name}" (결과 없음)`, [{
-      src: '식품의약품안전처 화장품 제조업체 정보', color: '#eab308', conf: 'mid',
-      val: '검색 결과 없음',
-      raw: '법인명 형태가 다를 수 있습니다. "(주)이손", "이손화학" 등 다른 형태로 재시도해보세요.',
+  if (error) {
+    openModal('인덱스 로드 오류', [{
+      src: 'fetch', color: '#ef4444', conf: 'low',
+      val: `오류: ${error}`, raw: '', link: '',
+    }]);
+    return;
+  }
+  if (!exact.length && !partial.length) {
+    openModal(`식약처 조회 — "${name}" (결과 없음)`, [{
+      src: '식품의약품안전처 공공데이터', color: '#eab308', conf: 'mid',
+      val: '일치하는 업체 없음',
+      raw: '"(주)이손", "이손화장품" 등 다른 형태로 재시도해보세요.',
       link: '',
     }]);
     return;
   }
-
-  const { exact, partial, similar } = rankMfdsItems(result.items, name);
   const evItems = [];
-
-  if (exact.length) {
-    exact.forEach(it => evItems.push(mfdsItemToEv(it, 'high')));
-  }
+  exact.forEach(it => evItems.push(mfdsItemToEv(it, 'high')));
   if (partial.length) {
     if (evItems.length) evItems.push({ src: '── 유사 업체 ──', color: '#6b7689', conf: 'low', val: '', raw: '', link: '' });
-    partial.slice(0, 5).forEach(it => evItems.push(mfdsItemToEv(it, 'mid')));
+    partial.slice(0, 8).forEach(it => evItems.push(mfdsItemToEv(it, 'mid')));
   }
-  if (!exact.length && !partial.length && similar.length) {
-    evItems.push({ src: `── 정확한 일치 없음 — 전체 결과 중 상위 ${Math.min(similar.length, 5)}건 ──`,
-      color: '#eab308', conf: 'low', val: '', raw: '', link: '' });
-    similar.slice(0, 5).forEach(it => evItems.push(mfdsItemToEv(it, 'low')));
-  }
+  const label = exact.length
+    ? `정확 ${exact.length}건${partial.length ? ` + 유사 ${partial.length}건` : ''}`
+    : `유사 ${partial.length}건`;
+  openModal(`식약처 조회 — "${name}" (${label})`, evItems);
+}
 
-  const matchLabel = exact.length ? `정확 ${exact.length}건` :
-    partial.length ? `유사 ${partial.length}건` : `전체 ${result.total}건 중 상위`;
-  openModal(`식약처 API — "${name}" (${matchLabel})`, evItems);
+async function searchMfds(name) {
+  const btn = document.querySelector('.api-search-btn');
+  const setBtnText = t => { if (btn) { btn.textContent = t; btn.disabled = t !== '식약처 조회'; } };
+  setBtnText('로딩 중…');
+  try {
+    const index = await loadMfdsIndex();
+    setBtnText('식약처 조회');
+    const result = searchMfdsIndex(index, name);
+    showMfdsResult(name, result);
+  } catch (e) {
+    setBtnText('식약처 조회');
+    const notBuilt = e.message.includes('404') || e.message.includes('403');
+    showMfdsResult(name, { exact: [], partial: [], other: [], error: notBuilt ? null : e.message, notBuilt });
+  }
 }
 
 async function searchByApi() {
   const name = (document.getElementById('search-input')?.value || '').trim();
   if (!name) { alert('검색창에 업체명을 입력한 뒤 누르세요.'); return; }
-  if (!getMfdsKey()) {
-    setupApiKey();
-    if (!getMfdsKey()) return;
-  }
-  const btn = document.querySelector('.api-search-btn');
-  if (btn) { btn.textContent = '조회 중…'; btn.disabled = true; }
-  const result = await lookupMfds(name);
-  if (btn) { btn.textContent = '식약처 API 조회'; btn.disabled = false; }
-  showMfdsResult(name, result);
+  await searchMfds(name);
 }
 
 async function triggerMfdsLookup() {
   const company = window.__currentCompany;
   if (!company) return;
+  await searchMfds(company.name);
+}
 
-  if (!getMfdsKey()) {
-    setupApiKey();
-    if (!getMfdsKey()) return;
-  }
-
-  const btn = document.getElementById('mfds-lookup-btn');
-  if (btn) { btn.textContent = '조회 중…'; btn.disabled = true; }
-
-  const result = await lookupMfds(company.name);
-
-  if (btn) { btn.textContent = '식약처 API 재조회'; btn.disabled = false; }
-
-  showMfdsResult(company.name, result);
+// setupApiKey는 이제 사용 안 하지만 기존 버튼 onclick과 호환성 유지
+function setupApiKey() {
+  alert('이제 API 키가 필요 없습니다.\n' +
+    'data/mfds-index.json 이 커밋돼 있으면 자동으로 로드됩니다.\n' +
+    '없으면: node tools/build-mfds-index.js "YOUR_KEY"');
 }
 
 function escapeHtml(s) {
