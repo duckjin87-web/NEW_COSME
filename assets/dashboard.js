@@ -278,7 +278,7 @@ async function lookupMfds(name) {
   const key = getMfdsKey();
   if (!key) return { error: 'no_key' };
   try {
-    const url = `${MFDS_API}?serviceKey=${key}&numOfRows=20&pageNo=1&type=json&mnfacturerNm=${encodeURIComponent(name)}`;
+    const url = `${MFDS_API}?serviceKey=${key}&numOfRows=100&pageNo=1&type=json&entpName=${encodeURIComponent(name)}`;
     const res = await fetch(url);
     if (!res.ok) return { error: `HTTP ${res.status}` };
     const json = await res.json();
@@ -290,6 +290,34 @@ async function lookupMfds(name) {
   } catch (e) {
     return { error: e.message };
   }
+}
+
+function rankMfdsItems(items, name) {
+  const q = name.replace(/[()（）\s주식회사(유)]/g, '').toLowerCase();
+  const exact = [], partial = [], similar = [];
+  for (const it of items) {
+    const n = (it.ENTP_NAME || '').replace(/[()（）\s주식회사(유)]/g, '').toLowerCase();
+    if (n === q) exact.push(it);
+    else if (n.includes(q) || q.includes(n)) partial.push(it);
+    else similar.push(it);
+  }
+  return { exact, partial, similar };
+}
+
+function mfdsItemToEv(it, conf) {
+  const nameVal = it.ENTP_NAME || '';
+  const bizVal  = it.BIZRNO   || '';
+  const bossVal = it.BOSS_NAME || '';
+  const addrVal = it.FACTORY_ADDR || '';
+  const dateVal = it.ENTP_PERMIT_DATE || '';
+  return {
+    src: '식품의약품안전처 공공데이터',
+    color: conf === 'high' ? '#22b8cf' : conf === 'mid' ? '#eab308' : '#6b7689',
+    conf,
+    val: `${nameVal}${bossVal ? ' / 대표: ' + bossVal : ''}${bizVal ? ' / 사업자번호: ' + bizVal : ''}`,
+    raw: [addrVal && `주소: ${addrVal}`, dateVal && `허가일: ${dateVal}`].filter(Boolean).join('\n'),
+    link: '',
+  };
 }
 
 function showMfdsResult(name, result) {
@@ -307,31 +335,34 @@ function showMfdsResult(name, result) {
     return;
   }
   if (!result.items || !result.items.length) {
-    openModal(`식약처 API — "${name}" (0건)`, [{
+    openModal(`식약처 API — "${name}" (결과 없음)`, [{
       src: '식품의약품안전처 화장품 제조업체 정보', color: '#eab308', conf: 'mid',
       val: '검색 결과 없음',
-      raw: '법인명 전체가 다를 수 있습니다. "(주)이손", "이손화학" 등 다른 형태로 재시도해보세요.',
+      raw: '법인명 형태가 다를 수 있습니다. "(주)이손", "이손화학" 등 다른 형태로 재시도해보세요.',
       link: '',
     }]);
     return;
   }
-  openModal(
-    `식약처 API — "${name}" (${result.total}건)`,
-    result.items.map(it => {
-      const nameVal = it.ENTP_NAME || it.mnfacturerNm || it.업체명 || it.업소명 || '';
-      const bizVal  = it.BIZRNO   || it.bizrno || it.사업자번호 || '';
-      const bossVal = it.BOSS_NAME || it.rprsntv || '';
-      const addrVal = it.FACTORY_ADDR || it.addr || '';
-      const dateVal = it.ENTP_PERMIT_DATE || it.regstrDt || '';
-      return {
-        src: '식품의약품안전처 공공데이터',
-        color: '#22b8cf', conf: 'high',
-        val: `${nameVal}${bossVal ? ' / 대표: ' + bossVal : ''}${bizVal ? ' / 사업자번호: ' + bizVal : ''}`,
-        raw: [addrVal && `주소: ${addrVal}`, dateVal && `허가일: ${dateVal}`].filter(Boolean).join('\n'),
-        link: '',
-      };
-    })
-  );
+
+  const { exact, partial, similar } = rankMfdsItems(result.items, name);
+  const evItems = [];
+
+  if (exact.length) {
+    exact.forEach(it => evItems.push(mfdsItemToEv(it, 'high')));
+  }
+  if (partial.length) {
+    if (evItems.length) evItems.push({ src: '── 유사 업체 ──', color: '#6b7689', conf: 'low', val: '', raw: '', link: '' });
+    partial.slice(0, 5).forEach(it => evItems.push(mfdsItemToEv(it, 'mid')));
+  }
+  if (!exact.length && !partial.length && similar.length) {
+    evItems.push({ src: `── 정확한 일치 없음 — 전체 결과 중 상위 ${Math.min(similar.length, 5)}건 ──`,
+      color: '#eab308', conf: 'low', val: '', raw: '', link: '' });
+    similar.slice(0, 5).forEach(it => evItems.push(mfdsItemToEv(it, 'low')));
+  }
+
+  const matchLabel = exact.length ? `정확 ${exact.length}건` :
+    partial.length ? `유사 ${partial.length}건` : `전체 ${result.total}건 중 상위`;
+  openModal(`식약처 API — "${name}" (${matchLabel})`, evItems);
 }
 
 async function searchByApi() {
