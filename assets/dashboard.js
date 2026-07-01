@@ -282,7 +282,7 @@ async function lookupMfds(name) {
     const res = await fetch(url);
     if (!res.ok) return { error: `HTTP ${res.status}` };
     const json = await res.json();
-    const body = json?.response?.body;
+    const body = json?.body || json?.response?.body;
     if (!body) return { error: 'parse_fail', raw: JSON.stringify(json).slice(0, 400) };
     const items = body.items;
     if (!items) return { items: [], total: 0 };
@@ -318,17 +318,16 @@ function showMfdsResult(name, result) {
   openModal(
     `식약처 API — "${name}" (${result.total}건)`,
     result.items.map(it => {
-      const nameVal = it.mnfacturerNm || it.업체명 || it.업소명 || it.FIRM_NM || '';
-      const bizVal  = it.bizrno || it.BIZRNO || it.사업자번호 || '';
-      const allFields = Object.entries(it)
-        .filter(([, v]) => v !== null && v !== undefined && v !== '')
-        .map(([k, v]) => `${k}: ${v}`)
-        .join('\n');
+      const nameVal = it.ENTP_NAME || it.mnfacturerNm || it.업체명 || it.업소명 || '';
+      const bizVal  = it.BIZRNO   || it.bizrno || it.사업자번호 || '';
+      const bossVal = it.BOSS_NAME || it.rprsntv || '';
+      const addrVal = it.FACTORY_ADDR || it.addr || '';
+      const dateVal = it.ENTP_PERMIT_DATE || it.regstrDt || '';
       return {
         src: '식품의약품안전처 공공데이터',
         color: '#22b8cf', conf: 'high',
-        val: `${nameVal}${bizVal ? ' / 사업자번호: ' + bizVal : ''}`,
-        raw: allFields,
+        val: `${nameVal}${bossVal ? ' / 대표: ' + bossVal : ''}${bizVal ? ' / 사업자번호: ' + bizVal : ''}`,
+        raw: [addrVal && `주소: ${addrVal}`, dateVal && `허가일: ${dateVal}`].filter(Boolean).join('\n'),
         link: '',
       };
     })
