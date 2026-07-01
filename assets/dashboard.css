@@ -16,8 +16,12 @@ a{color:inherit}
   padding:12px 16px;color:var(--txt);font-size:14px}
 .search-box input:focus{outline:none;border-color:var(--cyn)}
 .key-btn{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);
-  padding:0 16px;color:var(--txt3);font-size:12px;cursor:pointer;white-space:nowrap;transition:.15s}
+  padding:0 14px;color:var(--txt3);font-size:11px;cursor:pointer;white-space:nowrap;transition:.15s}
 .key-btn:hover{border-color:var(--cyn);color:var(--cyn)}
+.api-search-btn{background:rgba(34,184,207,.12);border:1px solid rgba(34,184,207,.5);border-radius:var(--r);
+  padding:0 18px;color:var(--cyn);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
+.api-search-btn:hover{background:var(--cyn);color:#000}
+.api-search-btn:disabled{opacity:.5;cursor:default}
 .mfds-btn{background:rgba(34,184,207,.08);border-color:rgba(34,184,207,.4);color:var(--cyn)}
 .company-list{display:flex;flex-direction:column;gap:10px}
 .company-card{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);

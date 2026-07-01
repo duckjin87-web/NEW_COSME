@@ -36,7 +36,8 @@ function renderList() {
     </div>
     <div class="search-box">
       <input id="search-input" type="text" placeholder="업체명으로 검색 (예: 이손)" autocomplete="off">
-      <button class="key-btn" onclick="setupApiKey()">${getMfdsKey() ? '🔑 API 키 설정됨' : '🔑 API 키 미설정'}</button>
+      <button class="api-search-btn" onclick="searchByApi()">식약처 API 조회</button>
+      <button class="key-btn" onclick="setupApiKey()">${getMfdsKey() ? '🔑 키설정됨' : '🔑 키미설정'}</button>
     </div>
     <div class="company-list" id="company-list"></div>
   `;
@@ -291,49 +292,31 @@ async function lookupMfds(name) {
   }
 }
 
-async function triggerMfdsLookup() {
-  const company = window.__currentCompany;
-  if (!company) return;
-
-  if (!getMfdsKey()) {
-    setupApiKey();
-    if (!getMfdsKey()) return;
-  }
-
-  const btn = document.getElementById('mfds-lookup-btn');
-  if (btn) { btn.textContent = '조회 중…'; btn.disabled = true; }
-
-  const result = await lookupMfds(company.name);
-
-  if (btn) { btn.textContent = '식약처 API 재조회'; btn.disabled = false; }
-
+function showMfdsResult(name, result) {
   if (result.error === 'no_key') { alert('API 키를 먼저 설정해주세요.'); return; }
-
   if (result.error) {
     openModal('API 조회 오류', [{
       src: '식약처 API', color: '#ef4444', conf: 'low',
       val: `오류: ${result.error}`,
       raw: result.error.toLowerCase().includes('fetch') || result.error.toLowerCase().includes('cors')
-        ? 'CORS 차단으로 보입니다. 이 경우 브라우저에서 직접 API 호출이 불가능합니다. ' +
-          'python3 스크립트로 서버사이드에서 호출하거나 CORS 프록시(Cloudflare Worker 등)가 필요합니다.'
+        ? 'CORS 차단으로 보입니다. 브라우저에서 직접 API 호출이 불가능합니다. ' +
+          'python3 스크립트로 서버사이드 호출하거나 CORS 프록시가 필요합니다.'
         : result.raw || '',
       link: '',
     }]);
     return;
   }
-
   if (!result.items || !result.items.length) {
-    openModal(`식약처 API — "${company.name}" (0건)`, [{
+    openModal(`식약처 API — "${name}" (0건)`, [{
       src: '식품의약품안전처 화장품 제조업체 정보', color: '#eab308', conf: 'mid',
       val: '검색 결과 없음',
-      raw: '법인명 전체가 다를 수 있습니다. "이손" → "(주)이손" 또는 "이손화장품" 등으로 바꿔 재시도해보세요.',
+      raw: '법인명 전체가 다를 수 있습니다. "(주)이손", "이손화학" 등 다른 형태로 재시도해보세요.',
       link: '',
     }]);
     return;
   }
-
   openModal(
-    `식약처 API — "${company.name}" (${result.total}건)`,
+    `식약처 API — "${name}" (${result.total}건)`,
     result.items.map(it => {
       const nameVal = it.mnfacturerNm || it.업체명 || it.업소명 || it.FIRM_NM || '';
       const bizVal  = it.bizrno || it.BIZRNO || it.사업자번호 || '';
@@ -350,6 +333,39 @@ async function triggerMfdsLookup() {
       };
     })
   );
+}
+
+async function searchByApi() {
+  const name = (document.getElementById('search-input')?.value || '').trim();
+  if (!name) { alert('검색창에 업체명을 입력한 뒤 누르세요.'); return; }
+  if (!getMfdsKey()) {
+    setupApiKey();
+    if (!getMfdsKey()) return;
+  }
+  const btn = document.querySelector('.api-search-btn');
+  if (btn) { btn.textContent = '조회 중…'; btn.disabled = true; }
+  const result = await lookupMfds(name);
+  if (btn) { btn.textContent = '식약처 API 조회'; btn.disabled = false; }
+  showMfdsResult(name, result);
+}
+
+async function triggerMfdsLookup() {
+  const company = window.__currentCompany;
+  if (!company) return;
+
+  if (!getMfdsKey()) {
+    setupApiKey();
+    if (!getMfdsKey()) return;
+  }
+
+  const btn = document.getElementById('mfds-lookup-btn');
+  if (btn) { btn.textContent = '조회 중…'; btn.disabled = true; }
+
+  const result = await lookupMfds(company.name);
+
+  if (btn) { btn.textContent = '식약처 API 재조회'; btn.disabled = false; }
+
+  showMfdsResult(company.name, result);
 }
 
 function escapeHtml(s) {
